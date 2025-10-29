@@ -98,8 +98,8 @@ The agent returns structured responses with:
 
 - `GET /` - Root endpoint
 - `GET /health` - Health check
-- `POST /chat` - Chat with the agent (original format)
-- `POST /postman` - Postman-specific endpoint with simplified format
+- `POST /chat` - Chat with the agent
+- `POST /postman` - Alternative endpoint (same format as /chat)
 - `GET /conversations/{conversation_id}` - Get conversation info
 - `DELETE /conversations/{conversation_id}` - Delete conversation
 - `GET /conversations` - List all conversations
@@ -117,41 +117,9 @@ All tools now read from and write to these JSON files instead of using hardcoded
 
 ## Example Usage
 
-### Postman Format (Simplified)
+### API Request Format
 
-**Fetch Account Details:**
-```json
-{
-  "user_id": 3867,
-  "query": "fetch account details"
-}
-```
-
-**Fetch Facility Details:**
-```json
-{
-  "facility_number": 24654624626,
-  "query": "fetch facility detail"
-}
-```
-
-**Save Notes:**
-```json
-{
-  "user_id": 3867,
-  "query": "save notes"
-}
-```
-
-**Fetch Notes:**
-```json
-{
-  "user_id": 3867,
-  "query": "fetch notes"
-}
-```
-
-### Original Format
+Both `/chat` and `/postman` endpoints use the same request format:
 
 **Account Overview Request:**
 ```json
@@ -160,6 +128,27 @@ All tools now read from and write to these JSON files instead of using hardcoded
   "user_id": "kaushal.sethia.c@evolus.com",
   "title": "sample",
   "account_id": "A-011977763"
+}
+```
+
+**Fetch Account Details:**
+```json
+{
+  "text": "fetch account details",
+  "user_id": "3867",
+  "title": "postman_test",
+  "account_id": "A-011977763"
+}
+```
+
+**Fetch Facility Details:**
+```json
+{
+  "text": "fetch facility details",
+  "user_id": "3867",
+  "title": "postman_test",
+  "account_id": "A-011977763",
+  "facility_id": "F-013203268"
 }
 ```
 
@@ -174,22 +163,18 @@ All tools now read from and write to these JSON files instead of using hardcoded
 }
 ```
 
-## Testing
+## Development
 
-Run the test scripts:
+For development, install additional dependencies:
 
 ```bash
-# Test basic functionality
-python test_basic.py
+pip install -r requirements-dev.txt
+```
 
-# Test data structure with JSON files
-python test_data_structure.py
+Set up pre-commit hooks:
 
-# Test PostgreSQL memory integration
-python test_postgres_memory.py
-
-# Test agent with sample requests
-python test_agent.py
+```bash
+pre-commit install
 ```
 
 ## Postman Collection

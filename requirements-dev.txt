@@ -1,0 +1,11 @@
+# Testing
+pytest>=8.3.0
+pytest-asyncio>=0.24.0
+
+# Code formatting and linting
+black>=24.10.0
+isort>=5.13.0
+flake8>=7.0.0
+
+# Pre-commit hooks
+pre-commit>=3.8.0

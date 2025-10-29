@@ -1,0 +1,21 @@
+repos:
+-   repo: https://github.com/psf/black
+    rev: 23.10.1
+    hooks:
+    -   id: black
+        language_version: python3
+        types_or: [python, pyi]
+        exclude: ^(venv|\.venv|__pycache__)/
+-   repo: https://github.com/pycqa/isort
+    rev: 5.13.2
+    hooks:
+    -   id: isort
+        types_or: [python, pyi]
+        exclude: ^(venv|\.venv|__pycache__)/
+        args: [--profile, black]
+-   repo: https://github.com/PyCQA/flake8
+    rev: 7.0.0
+    hooks:
+    -   id: flake8
+        types_or: [python, pyi]
+        exclude: ^(venv|\.venv|__pycache__)/

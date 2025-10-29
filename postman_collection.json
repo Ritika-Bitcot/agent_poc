@@ -1,0 +1,531 @@
+{
+    "info": {
+        "name": "Agent POC API - Complete Examples",
+        "description": "Complete collection for testing the Agent POC API with LangGraph and FastAPI. Includes all 4 tools with various scenarios.",
+        "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+    },
+    "item": [
+        {
+            "name": "Health Check",
+            "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                    "raw": "{{base_url}}/health",
+                    "host": [
+                        "{{base_url}}"
+                    ],
+                    "path": [
+                        "health"
+                    ]
+                }
+            },
+            "response": []
+        },
+        {
+            "name": "Account Tools",
+            "item": [
+                {
+                    "name": "Show Account Overview",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"text\": \"show account overview\",\n  \"user_id\": \"kaushal.sethia.c@evolus.com\",\n  \"title\": \"sample\",\n  \"account_id\": \"A-011977763\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/chat",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "chat"
+                            ]
+                        },
+                        "description": "Returns account overview with card_key: account_overview"
+                    }
+                },
+                {
+                    "name": "Account Overview - Follow-up Question",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"text\": \"how many do i need to go to next tier\",\n  \"user_id\": \"kaushal.sethia.c@evolus.com\",\n  \"title\": \"sample\",\n  \"account_id\": \"A-011977763\",\n  \"conversation_id\": \"c625fbc7-cc93-4a7e-841b-180872a9420a\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/chat",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "chat"
+                            ]
+                        },
+                        "description": "Follow-up question about tier points. Returns card_key: other"
+                    }
+                },
+                {
+                    "name": "Account Balance Question",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"text\": \"what is my current balance\",\n  \"user_id\": \"kaushal.sethia.c@evolus.com\",\n  \"title\": \"sample\",\n  \"account_id\": \"A-011977763\",\n  \"conversation_id\": \"c625fbc7-cc93-4a7e-841b-180872a9420a\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/chat",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "chat"
+                            ]
+                        },
+                        "description": "Follow-up question about account balance. Returns card_key: other"
+                    }
+                },
+                {
+                    "name": "Account Details - Natural Language",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"text\": \"tell me about my account\",\n  \"user_id\": \"kaushal.sethia.c@evolus.com\",\n  \"title\": \"sample\",\n  \"account_id\": \"A-011977763\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/chat",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "chat"
+                            ]
+                        },
+                        "description": "Natural language request for account information"
+                    }
+                }
+            ]
+        },
+        {
+            "name": "Facility Tools",
+            "item": [
+                {
+                    "name": "Show All Facilities Overview (No facility_id)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"text\": \"show facility overview\",\n  \"user_id\": \"kaushal.sethia.c@evolus.com\",\n  \"title\": \"sample\",\n  \"account_id\": \"A-011977763\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/chat",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "chat"
+                            ]
+                        },
+                        "description": "Returns all facilities for the account. Returns card_key: facility_overview"
+                    }
+                },
+                {
+                    "name": "Show Specific Facility Overview (With facility_id)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"text\": \"show facility overview\",\n  \"user_id\": \"kaushal.sethia.c@evolus.com\",\n  \"title\": \"sample\",\n  \"account_id\": \"A-011977763\",\n  \"facility_id\": \"F-015766066\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/chat",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "chat"
+                            ]
+                        },
+                        "description": "Returns specific facility details. Returns card_key: facility_overview"
+                    }
+                },
+                {
+                    "name": "Facility Status Question - All Facilities",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"text\": \"what are the statuses of all my facilities\",\n  \"user_id\": \"kaushal.sethia.c@evolus.com\",\n  \"title\": \"sample\",\n  \"account_id\": \"A-011977763\",\n  \"conversation_id\": \"f8a3b2c1-d4e5-4f6a-9b8c-7d6e5f4a3b2c\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/chat",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "chat"
+                            ]
+                        },
+                        "description": "Follow-up question about all facilities status. Returns card_key: other"
+                    }
+                },
+                {
+                    "name": "Facility Status Question - Specific Facility",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"text\": \"what is the status of my Diamond Facility\",\n  \"user_id\": \"kaushal.sethia.c@evolus.com\",\n  \"title\": \"sample\",\n  \"account_id\": \"A-011977763\",\n  \"facility_id\": \"F-015766066\",\n  \"conversation_id\": \"f8a3b2c1-d4e5-4f6a-9b8c-7d6e5f4a3b2c\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/chat",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "chat"
+                            ]
+                        },
+                        "description": "Follow-up question about specific facility status. Returns card_key: other"
+                    }
+                }
+            ]
+        },
+        {
+            "name": "Notes Tools - Save",
+            "item": [
+                {
+                    "name": "Save Notes - Simple",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"text\": \"Save a note with title 'Team Meeting Minutes' and content 'Discussed Q4 goals and roadmap. Action items: Complete feature X by next week, review budget allocation.'\",\n  \"user_id\": \"kaushal.sethia.c@evolus.com\",\n  \"title\": \"Team Meeting Minutes\",\n  \"account_id\": \"A-011977763\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/chat",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "chat"
+                            ]
+                        },
+                        "description": "Saves a note to notes_data.json. Returns card_key: other"
+                    }
+                },
+                {
+                    "name": "Save Notes - Natural Language",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"text\": \"Please save a note titled 'Project Review' with the following content: 'Meeting with stakeholders on Monday. Key decisions: Proceed with Phase 2, allocate $50K budget.'\",\n  \"user_id\": \"kaushal.sethia.c@evolus.com\",\n  \"title\": \"Project Review\",\n  \"account_id\": \"A-011977763\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/chat",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "chat"
+                            ]
+                        },
+                        "description": "Saves a note using natural language. Returns card_key: other"
+                    }
+                },
+                {
+                    "name": "Save Notes - MOM",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"text\": \"Save MOM for today's meeting. Title: 'Weekly Standup', Content: 'Discussed progress on sprint goals. Blockers: Waiting for API integration. Next steps: Schedule review meeting.'\",\n  \"user_id\": \"kaushal.sethia.c@evolus.com\",\n  \"title\": \"Weekly Standup\",\n  \"account_id\": \"A-011977763\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/chat",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "chat"
+                            ]
+                        },
+                        "description": "Saves a meeting minutes (MOM). Returns card_key: other"
+                    }
+                }
+            ]
+        },
+        {
+            "name": "Notes Tools - Fetch",
+            "item": [
+                {
+                    "name": "Show My Notes (Last 5)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"text\": \"show my notes\",\n  \"user_id\": \"test@example.com\",\n  \"title\": \"sample\",\n  \"account_id\": \"A-011977763\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/chat",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "chat"
+                            ]
+                        },
+                        "description": "Returns last 5 notes for the user. Returns card_key: notes_overview"
+                    }
+                },
+                {
+                    "name": "Show Notes - By Date",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"text\": \"show notes from 2025-10-29\",\n  \"user_id\": \"test@example.com\",\n  \"title\": \"sample\",\n  \"account_id\": \"A-011977763\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/chat",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "chat"
+                            ]
+                        },
+                        "description": "Returns notes filtered by date (YYYY-MM-DD format). Returns card_key: notes_overview"
+                    }
+                },
+                {
+                    "name": "Show Notes - Empty Result",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"text\": \"show my notes\",\n  \"user_id\": \"newuser@example.com\",\n  \"title\": \"sample\",\n  \"account_id\": \"A-011977763\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/chat",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "chat"
+                            ]
+                        },
+                        "description": "Returns empty notes for a user with no saved notes. Returns card_key: notes_overview"
+                    }
+                },
+                {
+                    "name": "Show Notes - Natural Language",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"text\": \"retrieve my recent notes\",\n  \"user_id\": \"test@example.com\",\n  \"title\": \"sample\",\n  \"account_id\": \"A-011977763\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/chat",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "chat"
+                            ]
+                        },
+                        "description": "Natural language request for notes. Returns card_key: notes_overview"
+                    }
+                }
+            ]
+        },
+        {
+            "name": "General Queries",
+            "item": [
+                {
+                    "name": "Greeting",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"text\": \"Hello, how can you help me?\",\n  \"user_id\": \"kaushal.sethia.c@evolus.com\",\n  \"title\": \"sample\",\n  \"account_id\": \"A-011977763\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/chat",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "chat"
+                            ]
+                        },
+                        "description": "General greeting. Returns card_key: other"
+                    }
+                },
+                {
+                    "name": "Multi-turn Conversation - Account to Facility",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"text\": \"now show me my facilities\",\n  \"user_id\": \"kaushal.sethia.c@evolus.com\",\n  \"title\": \"sample\",\n  \"account_id\": \"A-011977763\",\n  \"conversation_id\": \"c625fbc7-cc93-4a7e-841b-180872a9420a\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/chat",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "chat"
+                            ]
+                        },
+                        "description": "Follow-up question in a multi-turn conversation. Uses conversation_id for context."
+                    }
+                }
+            ]
+        },
+        {
+            "name": "Legacy Endpoints",
+            "item": [
+                {
+                    "name": "Postman Endpoint - Account Overview",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"text\": \"show account overview\",\n  \"user_id\": \"kaushal.sethia.c@evolus.com\",\n  \"title\": \"sample\",\n  \"account_id\": \"A-011977763\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/postman",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "postman"
+                            ]
+                        },
+                        "description": "Same format as /chat endpoint, alternative endpoint for Postman"
+                    }
+                }
+            ]
+        }
+    ],
+    "variable": [
+        {
+            "key": "base_url",
+            "value": "http://localhost:8000",
+            "type": "string"
+        }
+    ]
+}
