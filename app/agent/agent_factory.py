@@ -1,13 +1,11 @@
-"""Agent factory using LangGraph create_react_agent."""
+"""Agent factory using LangChain's latest create_agent API with structured output."""
 
 import json
 from typing import Any, Optional
 
-from langchain_core.messages import HumanMessage
+from langchain.agents import create_agent
+from langchain_core.messages import AIMessage, HumanMessage
 from langchain_openai import ChatOpenAI
-from langgraph.checkpoint.memory import MemorySaver
-from langgraph.graph import END, StateGraph
-from langgraph.graph.message import add_messages
 
 from app.memory import get_conversation_memory
 from app.models.response_models import AgentResponse
@@ -22,9 +20,251 @@ from app.tools import (
 _agent = None
 
 
-def create_agent(openai_api_key: str, model_name: str = "gpt-4o-mini") -> Any:
+def _determine_card_key(
+    query: str,
+    tools_called: set,
+    account_data: list,
+    facility_data: list,
+    notes_data: list,
+) -> str:
     """
-    Create the agent using LangGraph's StateGraph.
+    Intelligently determine the card_key based on which tools were called
+    and what data was fetched.
+
+    Args:
+        query: The user's original query
+        tools_called: Set of tool names that were called
+        account_data: Account data that was fetched
+        facility_data: Facility data that was fetched
+        notes_data: Notes data that was fetched
+
+    Returns:
+        The appropriate card_key
+    """
+    # Check which tools were called
+    if "fetch_notes" in tools_called or "save_notes" in tools_called:
+        return "notes_overview"
+
+    # Check if both account and facility data were fetched (account overview scenario)
+    if account_data and facility_data:
+        return "account_overview"
+
+    # Check if only facility data was fetched
+    if facility_data and not account_data:
+        return "facility_overview"
+
+    # Check if account data was fetched
+    if account_data:
+        # Check if query is about account overview specifically
+        query_lower = query.lower()
+        if any(
+            keyword in query_lower
+            for keyword in ["account overview", "show account", "account details"]
+        ):
+            return "account_overview"
+        # Otherwise it's a specific account question
+        return "other"
+
+    # Default to other
+    return "other"
+
+
+def _generate_response_from_data(
+    query: str, account_data: list, facility_data: list, notes_data: list
+) -> str:
+    """
+    Generate a natural language response based on the fetched data.
+
+    Args:
+        query: The user's original query
+        account_data: Account data that was fetched
+        facility_data: Facility data that was fetched
+        notes_data: Notes data that was fetched
+
+    Returns:
+        Natural language response
+    """
+    query_lower = query.lower()
+
+    # Account overview response
+    if account_data and any(
+        keyword in query_lower
+        for keyword in ["account", "overview", "summary", "show account"]
+    ):
+        account = account_data[0]
+
+        # Format address
+        address_parts = [
+            account.get("address_line1", ""),
+            account.get("address_city", ""),
+            account.get("address_state", ""),
+        ]
+        address = ", ".join(filter(None, address_parts))
+        if account.get("address_postal_code"):
+            address += f" {account.get('address_postal_code')}"
+
+        # Prepare values for long lines
+        current_tier = account.get("current_tier", "N/A")
+        next_tier_val = account.get("next_tier", "N/A")
+        points_needed_val = account.get("points_to_next_tier", 0)
+        current_balance = account.get("current_balance", 0)
+        pending_balance = account.get("pending_balance", 0)
+        rewards_redeemed = account.get("rewards_redeemed_towards_next_free_vial", 0)
+        rewards_required = account.get("rewards_required_for_next_free_vial", 0)
+
+        response = f"""Here is a summary of your account:
+
+- Account Name: {account.get('name', 'N/A')}
+- Status: {account.get('status', 'N/A')}
+- Account ID: {account.get('account_id', 'N/A')}
+- Address: {address}
+- Pricing Model: {account.get('pricing_model', 'N/A')}
+
+Loyalty & Rewards:
+- Current Loyalty Tier: {current_tier} (next tier: {next_tier_val}, {points_needed_val} points needed)  # noqa: E501
+- Loyalty Points Balance: {current_balance} (pending: {pending_balance})
+- Free Vials Available: {account.get('free_vials_available', 0)}
+- Rewards Redeemed Toward Next Free Vial: {rewards_redeemed} ({rewards_required} needed for next free vial)  # noqa: E501
+
+Other Details:
+- Evolux Level: {account.get('evolux_level', 'N/A')}
+- Reward Program Opt-in Status: {account.get('rewards_status', 'N/A')}
+
+Let me know if you need more detailed information or have other questions!"""
+
+        # Add facility information if available
+        if facility_data:
+            response += f"\n\nFacilities ({len(facility_data)} total):\n"
+            for i, facility in enumerate(facility_data, 1):
+                name = facility.get("name", "N/A")
+                fac_id = facility.get("id", "N/A")
+                status = facility.get("status", "N/A")
+                response += f"{i}. {name} ({fac_id}) - Status: {status}\n"
+
+        return response
+
+    # Facility overview response
+    elif facility_data and any(
+        keyword in query_lower for keyword in ["facility", "facilities"]
+    ):
+        if len(facility_data) == 1:
+            facility = facility_data[0]
+            # Prepare values for long lines
+            account_name = facility.get("account_name", "N/A")
+            account_id_val = facility.get("account_id", "N/A")
+            shipping_line1 = facility.get("shipping_address_line1", "N/A")
+            shipping_city = facility.get("shipping_address_city", "N/A")
+            shipping_state = facility.get("shipping_address_state", "N/A")
+            shipping_zip = facility.get("shipping_address_zip", "N/A")
+            license_num = facility.get("medical_license_number", "N/A")
+            license_status = facility.get("medical_license_status", "N/A")
+            owner_first = facility.get("medical_license_owner_first_name", "N/A")
+            owner_last = facility.get("medical_license_owner_last_name", "N/A")
+            agreement_status = facility.get("agreement_status", "N/A")
+            agreement_type = facility.get("agreement_type", "N/A")
+
+            return f"""Here is a summary of your facility:
+
+- Facility Name: {facility.get('name', 'N/A')}
+- Status: {facility.get('status', 'N/A')}
+- Facility ID: {facility.get('id', 'N/A')}
+- Account: {account_name} ({account_id_val})
+- Shipping Address: {shipping_line1}, {shipping_city}, {shipping_state} {shipping_zip}
+- Medical License: {license_num} ({license_status})
+- License Owner: {owner_first} {owner_last}
+- Agreement Status: {agreement_status} ({agreement_type})
+
+Let me know if you need more detailed information or have other questions!"""
+        else:
+            response = f"Here are all your facilities ({len(facility_data)} total):\n\n"
+            for i, facility in enumerate(facility_data, 1):
+                name = facility.get("name", "N/A")
+                fac_id = facility.get("id", "N/A")
+                status = facility.get("status", "N/A")
+                response += f"{i}. {name} ({fac_id}) - Status: {status}\n"
+            response += (
+                "\nLet me know if you need more detailed information "
+                "about any specific facility!"
+            )
+            return response
+
+    # Notes overview response
+    elif notes_data and any(
+        keyword in query_lower for keyword in ["notes", "note", "meeting"]
+    ):
+        if not notes_data:
+            return "You don't have any notes saved yet."
+        else:
+            response = f"Here are your notes ({len(notes_data)} total):\n\n"
+            for i, note in enumerate(notes_data, 1):
+                created_at = note.get("created_at", "")
+                date_str = created_at.split("T")[0] if "T" in created_at else created_at
+                time_str = (
+                    created_at.split("T")[1].split(".")[0] if "T" in created_at else ""
+                )
+
+                response += f"{i}. {note.get('title', 'Untitled')} (Created: {date_str}"
+                if time_str:
+                    response += f" at {time_str}"
+                response += ")\n"
+                response += f"   Content: {note.get('content', '')[:100]}"
+                if len(note.get("content", "")) > 100:
+                    response += "..."
+                response += "\n\n"
+            response += "Let me know if you need more details about any specific note!"
+            return response
+
+    # Specific account questions
+    elif account_data and any(
+        keyword in query_lower for keyword in ["points", "tier", "loyalty", "rewards"]
+    ):
+        account = account_data[0]
+        if "points" in query_lower and "tier" in query_lower:
+            points_needed = account.get("points_to_next_tier", 0)
+            next_tier = account.get("next_tier", "N/A")
+            return (
+                f"You need {points_needed} more points to reach "
+                f"the next tier ({next_tier.title()})."
+            )
+        elif "how many" in query_lower and (
+            "tier" in query_lower or "points" in query_lower
+        ):
+            points_needed = account.get("points_to_next_tier", 0)
+            next_tier = account.get("next_tier", "N/A")
+            return (
+                f"You need {points_needed} more points to reach "
+                f"the next tier ({next_tier.title()})."
+            )
+        elif "balance" in query_lower:
+            current_balance = account.get("current_balance", 0)
+            pending_balance = account.get("pending_balance", 0)
+            return (
+                f"Your current loyalty points balance is {current_balance} "
+                f"(with {pending_balance} pending)."
+            )
+        else:
+            return (
+                "Based on your account information, I can help you with specific "
+                "questions about your loyalty status, rewards, or account details."
+            )
+
+    # Default response
+    else:
+        if account_data or facility_data or notes_data:
+            return (
+                "I've gathered the available information. How can I help you with "
+                "your account, facilities, or notes?"
+            )
+        else:
+            return (
+                "I apologize, but I couldn't process your request. Please try "
+                "asking about your account, facilities, or notes."
+            )
+
+
+def create_agent_instance(openai_api_key: str, model_name: str = "gpt-4o-mini") -> Any:
+    """
+    Create the agent using LangChain's create_agent API with structured output.
 
     Args:
         openai_api_key: OpenAI API key
@@ -38,7 +278,7 @@ def create_agent(openai_api_key: str, model_name: str = "gpt-4o-mini") -> Any:
         api_key=openai_api_key, model=model_name, temperature=0.1, max_tokens=2000
     )
 
-    # Get the tools
+    # Get the tools (no need for determine_response_structure tool anymore)
     tools = [fetch_account_details, fetch_facility_details, save_notes, fetch_notes]
 
     # Get the prompt template
@@ -46,112 +286,10 @@ def create_agent(openai_api_key: str, model_name: str = "gpt-4o-mini") -> Any:
 
     prompt = get_agent_prompt()
 
-    # Bind tools to the LLM
-    llm_with_tools = llm.bind_tools(tools)
-
-    # Define the agent function
-    def agent_node(state):
-        messages = state["messages"]
-        # Check if system message is already present
-        has_system = any(
-            msg.type == "system" for msg in messages if hasattr(msg, "type")
-        )
-
-        # Add system prompt if not present
-        if not has_system:
-            formatted_prompt = prompt.format_messages()
-            all_messages = formatted_prompt + messages
-        else:
-            all_messages = messages
-
-        response = llm_with_tools.invoke(all_messages)
-        return {"messages": [response]}
-
-    # Define the tool execution function
-    def tool_node(state):
-        messages = state["messages"]
-        last_message = messages[-1]
-
-        # Execute tools if the last message has tool calls
-        if hasattr(last_message, "tool_calls") and last_message.tool_calls:
-            tool_results = []
-            for tool_call in last_message.tool_calls:
-                tool_name = tool_call["name"]
-                tool_args = tool_call["args"]
-
-                # Find and execute the tool
-                for tool in tools:
-                    if tool.name == tool_name:
-                        try:
-                            result = tool.invoke(tool_args)
-                            # Convert result to JSON string if it's a dict
-                            if isinstance(result, dict):
-                                import json
-
-                                result_str = json.dumps(result)
-                            else:
-                                result_str = str(result)
-                            tool_results.append(
-                                {
-                                    "tool_call_id": tool_call["id"],
-                                    "content": result_str,
-                                }
-                            )
-                        except Exception as e:
-                            tool_results.append(
-                                {
-                                    "tool_call_id": tool_call["id"],
-                                    "content": f"Error executing tool: {str(e)}",
-                                }
-                            )
-                        break
-
-            # Add tool results to messages
-            from langchain_core.messages import ToolMessage
-
-            tool_messages = [
-                ToolMessage(
-                    content=result["content"], tool_call_id=result["tool_call_id"]
-                )
-                for result in tool_results
-            ]
-            return {"messages": tool_messages}
-
-        return {"messages": []}
-
-    # Define routing function to determine if we should continue or end
-    def should_continue(state):
-        messages = state["messages"]
-        last_message = messages[-1]
-
-        # If the last message has tool calls, route to tools
-        if hasattr(last_message, "tool_calls") and last_message.tool_calls:
-            return "tools"
-        # Otherwise, we're done
-        return END
-
-    # Create the graph
-    from typing import Annotated, TypedDict
-
-    class AgentState(TypedDict):
-        messages: Annotated[list, add_messages]
-
-    workflow = StateGraph(AgentState)
-
-    # Add nodes
-    workflow.add_node("agent", agent_node)
-    workflow.add_node("tools", tool_node)
-
-    # Add conditional edges
-    workflow.add_conditional_edges("agent", should_continue)
-    workflow.add_edge("tools", "agent")  # Loop back to agent after tools
-
-    # Set entry point
-    workflow.set_entry_point("agent")
-
-    # Compile the graph
-    memory = MemorySaver()
-    agent = workflow.compile(checkpointer=memory)
+    # Create agent using the latest create_agent API
+    agent = create_agent(
+        model=llm, tools=tools, system_prompt=prompt.format_messages()[0].content
+    )
 
     return agent
 
@@ -168,7 +306,7 @@ def get_agent(openai_api_key: str) -> Any:
     """
     global _agent
     if _agent is None:
-        _agent = create_agent(openai_api_key)
+        _agent = create_agent_instance(openai_api_key)
     return _agent
 
 
@@ -200,377 +338,125 @@ def process_agent_request(
         user_id, conversation_id
     )
 
-    # Prepare the input for the agent
-    # create_react_agent expects dict with "messages" key
-
     # Create message with context
     message_content = f"""User Query: {text}
 
 Context:
-- Account ID: {account_id} (use this account_id when calling
-  fetch_account_details tool)
+- Account ID: {account_id} (use this account_id when calling fetch_account_details tool)
 - User ID: {user_id} (use this user_id when calling fetch_notes tool)
-{f'- Facility ID: {facility_id} (use this facility_id when calling '
- f'fetch_facility_details tool)' if facility_id else ''}
+{f'- Facility ID: {facility_id} (use this facility_id when calling fetch_facility_details tool)' if facility_id else ''}  # noqa: E501
 
-Please help the user with their request. Use the available tools with
-the IDs provided above."""
+Please help the user with their request. Use the available tools with the IDs provided above to fetch the necessary data."""
 
-    # StateGraph expects input as dict with "messages" key
-    # System prompt will be added by agent_node if not present
-    agent_input = {"messages": [HumanMessage(content=message_content)]}
+    # Prepare input for the agent
+    human_message = HumanMessage(content=message_content)
+    agent_input = {"messages": [human_message]}
 
-    # Run the agent
+    # Save the human message to conversation memory
+    conv_memory.add_message(final_conversation_id, human_message)
+
+    # Run the agent with conversation memory
     try:
         result = agent.invoke(
             agent_input, config={"configurable": {"thread_id": final_conversation_id}}
         )
 
-        # Extract tool results and response from messages
-        account_data = None
-        facility_data = None
+        # Extract data from the result
+        account_data = []
+        facility_data = []
         notes_data = []
         response_content = ""
+        tools_called = set()
 
         if isinstance(result, dict) and "messages" in result:
             messages = result["messages"]
 
-            # Extract tool results from messages
-            from langchain_core.messages import ToolMessage
-
+            # Extract tool results and track which tools were called
             for msg in messages:
-                # Check if this is a tool result (ToolMessage)
-                if isinstance(msg, ToolMessage):
-                    # Tool results are stored as content
-                    tool_result = msg.content
-                    # Try to parse as JSON if it's a string
-                    if isinstance(tool_result, str):
-                        try:
-                            tool_result = json.loads(tool_result)
-                        except json.JSONDecodeError:
-                            pass
+                # Track tool calls
+                if hasattr(msg, "name") and msg.name:
+                    tools_called.add(msg.name)
 
-                    if isinstance(tool_result, dict):
-                        if "account_overview" in tool_result:
-                            # Extract facilities before removing them from account data
-                            account_list = tool_result.get("account_overview", [])
-                            # Collect facility IDs from account data
-                            facility_ids_from_account = []
-                            for acc in account_list:
-                                if "facilities" in acc and isinstance(
-                                    acc["facilities"], list
-                                ):
-                                    for facility in acc["facilities"]:
-                                        if "id" in facility:
-                                            facility_ids_from_account.append(
-                                                facility["id"]
-                                            )
+                if hasattr(msg, "content") and isinstance(msg.content, str):
+                    try:
+                        # Try to parse as JSON to extract structured data
+                        tool_result = json.loads(msg.content)
+                        if isinstance(tool_result, dict):
+                            if "account_overview" in tool_result:
+                                account_data = tool_result.get("account_overview", [])
+                            if "facility_overview" in tool_result:
+                                facility_data = tool_result.get("facility_overview", [])
+                            if "note_overview" in tool_result:
+                                notes_data = tool_result.get("note_overview", [])
+                    except json.JSONDecodeError:
+                        # If not JSON, check if it's a natural language response
+                        if not response_content and len(msg.content) > 10:
+                            response_content = msg.content
 
-                            # Remove 'facilities' field from each account
-                            # as it's not in AccountOverview model
-                            account_data = [
-                                {k: v for k, v in acc.items() if k != "facilities"}
-                                for acc in account_list
-                            ]
-
-                            # If we have facility IDs from account,
-                            # fetch full facility details
-                            if facility_ids_from_account and not facility_data:
-                                from app.data import get_data_loader
-
-                                data_loader = get_data_loader()
-                                facilities_from_account = []
-                                for fac_id in facility_ids_from_account:
-                                    fac_data = data_loader.get_facility_by_id(fac_id)
-                                    if fac_data:
-                                        facilities_from_account.append(fac_data)
-                                if facilities_from_account:
-                                    facility_data = facilities_from_account
-                        elif "facility_overview" in tool_result:
-                            facility_data = tool_result.get("facility_overview", [])
-                        elif "note_overview" in tool_result:
-                            notes_data = tool_result.get("note_overview", [])
-
-            # Get the last AI message (the final response)
+            # Get the last AI message (the final response) - skip context messages
             for msg in reversed(messages):
-                # Skip tool messages and get the last AI response
-                if not isinstance(msg, ToolMessage):
-                    if hasattr(msg, "content") and msg.content:
-                        response_content = msg.content
-                        break
+                if (
+                    hasattr(msg, "content")
+                    and msg.content
+                    and not response_content
+                    and not msg.content.startswith("User Query:")
+                    and not msg.content.startswith("Context:")
+                    and not msg.content.startswith("Please help the user")
+                    and len(msg.content) > 20
+                ):
+                    response_content = msg.content
+                    break
 
-            if not response_content:
-                response_content = "I apologize, but I couldn't process your request."
+            # If no proper response found or response is just context,
+            # generate one based on the data
+            if (
+                not response_content
+                or response_content.startswith("User Query:")
+                or response_content.startswith("Context:")
+                or response_content.startswith("Please help the user")
+            ):
+                response_content = _generate_response_from_data(
+                    text, account_data, facility_data, notes_data
+                )
+
         else:
             response_content = str(result)
 
-        # Determine card_key based on user input
-        # Only use specific card_keys for explicit overview requests
-        # All follow-up questions, greetings, and specific queries use "other"
-        text_lower = text.lower().strip()
+        # Intelligently determine card_key based on which tools were called
+        # and what data was fetched
+        card_key = _determine_card_key(
+            text, tools_called, account_data, facility_data, notes_data
+        )
 
-        # Check for explicit overview requests (must be exact phrases)
-        if text_lower in ["show account overview", "account overview"] or (
-            "show" in text_lower
-            and "account" in text_lower
-            and "overview" in text_lower
-        ):
-            card_key = "account_overview"
-        elif text_lower in ["show facility overview", "facility overview"] or (
-            "show" in text_lower
-            and "facility" in text_lower
-            and "overview" in text_lower
-        ):
-            card_key = "facility_overview"
-        elif text_lower in ["show notes", "show my notes", "notes"] or (
-            "show" in text_lower and "notes" in text_lower
-        ):
-            card_key = "notes_overview"
-        else:
-            # All follow-up questions, greetings, and specific queries use "other"
-            card_key = "other"
+        # Save the AI response to conversation memory
+        ai_message = AIMessage(content=response_content)
+        conv_memory.add_message(final_conversation_id, ai_message)
 
-        # Fetch data directly if tool wasn't called and we need it
-        from app.data import get_data_loader
-
-        data_loader = get_data_loader()
-
-        if card_key == "account_overview" and not account_data:
-            account_fetched = data_loader.get_account_by_id(account_id)
-            if account_fetched:
-                # Extract facilities before removing them
-                facility_ids_from_account = []
-                if "facilities" in account_fetched and isinstance(
-                    account_fetched["facilities"], list
-                ):
-                    for facility in account_fetched["facilities"]:
-                        if "id" in facility:
-                            facility_ids_from_account.append(facility["id"])
-
-                # Remove 'facilities' field as it's not part of AccountOverview model
-                account_fetched = {
-                    k: v for k, v in account_fetched.items() if k != "facilities"
-                }
-                account_data = [account_fetched]
-
-                # Fetch full facility details if we have facility IDs
-                if facility_ids_from_account and not facility_data:
-                    facilities_from_account = []
-                    for fac_id in facility_ids_from_account:
-                        fac_data = data_loader.get_facility_by_id(fac_id)
-                        if fac_data:
-                            facilities_from_account.append(fac_data)
-                    if facilities_from_account:
-                        facility_data = facilities_from_account
-        elif card_key == "facility_overview" and not facility_data:
-            if facility_id:
-                # Fetch specific facility
-                facility_fetched = data_loader.get_facility_by_id(facility_id)
-                if facility_fetched:
-                    facility_data = [facility_fetched]
-            else:
-                # Fetch all facilities for the account
-                facilities_fetched = data_loader.get_facilities_by_account_id(
-                    account_id
-                )
-                facility_data = facilities_fetched
-        elif card_key == "notes_overview" and not notes_data:
-            notes_fetched = data_loader.get_notes_by_user_id(user_id)
-            if notes_fetched:
-                # Limit to last 5 notes as per requirements
-                notes_fetched.sort(key=lambda x: x.get("created_at", ""), reverse=True)
-                notes_data = notes_fetched[:5]
-
-        # Format response based on tool results
-        if facility_data and card_key == "facility_overview":
-            if len(facility_data) == 1:
-                # Single facility
-                facility = facility_data[0]
-                account_name = facility.get("account_name", "N/A")
-                account_id_val = facility.get("account_id", "N/A")
-                addr_line1 = facility.get("shipping_address_line1", "N/A")
-                addr_city = facility.get("shipping_address_city", "N/A")
-                addr_state = facility.get("shipping_address_state", "N/A")
-                addr_zip = facility.get("shipping_address_zip", "N/A")
-                license_num = facility.get("medical_license_number", "N/A")
-                license_status = facility.get("medical_license_status", "N/A")
-                license_exp_date = facility.get(
-                    "medical_license_expiration_date", "N/A"
-                )
-                owner_first = facility.get("medical_license_owner_first_name", "N/A")
-                owner_last = facility.get("medical_license_owner_last_name", "N/A")
-                agreement_status = facility.get("agreement_status", "N/A")
-                agreement_type = facility.get("agreement_type", "N/A")
-                medical_license_line = (
-                    f"{license_num} ({license_status}, " f"expires {license_exp_date})"
-                )
-                final_response = f"""Here is a summary of your facility:
-
-        - Facility Name: {facility.get('name', 'N/A')}
-        - Status: {facility.get('status', 'N/A')}
-        - Facility ID: {facility.get('id', 'N/A')}
-        - Account: {account_name} ({account_id_val})
-        - Shipping Address: {addr_line1}, {addr_city}, {addr_state} {addr_zip}
-        - Medical License: {medical_license_line}
-        - License Owner: {owner_first} {owner_last}
-        - Agreement Status: {agreement_status} ({agreement_type})
-        - Agreement Signed: {facility.get('agreement_signed_at', 'N/A')}
-
-        Let me know if you need more detailed information or have other questions!"""
-            else:
-                # Multiple facilities
-                final_response = (
-                    f"Here are all your facilities ({len(facility_data)} total):\n\n"
-                )
-                for i, facility in enumerate(facility_data, 1):
-                    final_response += (
-                        f"{i}. {facility.get('name', 'N/A')} "
-                        f"({facility.get('id', 'N/A')}) - "
-                        f"Status: {facility.get('status', 'N/A')}\n"
-                    )
-                final_response += (
-                    "\nLet me know if you need more detailed information "
-                    "about any specific facility!"
-                )
-        elif account_data and card_key == "account_overview":
-            account = account_data[0] if account_data else {}
-            # Format address exactly as expected:
-            # "100 WYCLIFFE, IRVINE, CA 92602-1206"
-            address_line1 = account.get("address_line1", "")
-            address_city = account.get("address_city", "")
-            address_state = account.get("address_state", "")
-            address_postal = account.get("address_postal_code", "")
-
-            address_parts = [address_line1, address_city, address_state]
-            address = ", ".join(filter(None, address_parts))
-            if address_postal:
-                address += f" {address_postal}"
-
-            final_response = f"""Here is a summary of your account:
-
-        - Account Name: {account.get('name', 'N/A')}
-        - Status: {account.get('status', 'N/A')}
-        - Account ID: {account.get('account_id', 'N/A')}
-        - Address: {address}
-        - Pricing Model: {account.get('pricing_model', 'N/A')}
-
-        Loyalty & Rewards:
-        - Current Loyalty Tier: {account.get('current_tier', 'N/A')} (
-          next tier: {account.get('next_tier', 'N/A')}, {
-          account.get('points_to_next_tier', 0)} points needed)
-        - Loyalty Points Balance: {account.get('current_balance', 0)} (
-          pending: {account.get('pending_balance', 0)})
-        - Free Vials Available: {
-          account.get('free_vials_available', 0)}
-        - Rewards Redeemed Toward Next Free Vial: {
-          account.get('rewards_redeemed_towards_next_free_vial', 0)} ({
-          account.get('rewards_required_for_next_free_vial', 0)} needed
-          for next free vial)
-
-        Other Details:
-        - Evolux Level: {account.get('evolux_level', 'N/A')}
-        - Reward Program Opt-in Status: {account.get('rewards_status', 'N/A')}
-
-        Let me know if you need more detailed information or have other questions!"""
-        elif card_key == "notes_overview":
-            # Format notes response
-            if not notes_data:
-                final_response = "You don't have any notes saved yet."
-            else:
-                final_response = f"Here are your notes ({len(notes_data)} total):\n\n"
-                for i, note in enumerate(notes_data, 1):
-                    # Parse date if needed
-                    created_at = note.get("created_at", "")
-                    date_str = (
-                        created_at.split("T")[0] if "T" in created_at else created_at
-                    )
-                    time_str = (
-                        created_at.split("T")[1].split(".")[0]
-                        if "T" in created_at
-                        else ""
-                    )
-
-                    final_response += (
-                        f"{i}. {note.get('title', 'Untitled')} (Created: {date_str}"
-                    )
-                    if time_str:
-                        final_response += f" at {time_str}"
-                    final_response += ")\n"
-                    final_response += f"   Content: {note.get('content', '')[:100]}"
-                    if len(note.get("content", "")) > 100:
-                        final_response += "..."
-                    final_response += "\n\n"
-                final_response += (
-                    "Let me know if you need more details about any specific note!"
-                )
-        elif (
-            card_key == "other"
-            and "how many" in text_lower
-            and ("tier" in text_lower or "points" in text_lower)
-        ):
-            # Handle tier question - need to fetch account data first
-            # if not already fetched
-            if not account_data:
-                # Try to fetch account data for the question
-                from app.data import get_data_loader
-
-                data_loader = get_data_loader()
-                account_fetched = data_loader.get_account_by_id(account_id)
-                if account_fetched:
-                    # Remove 'facilities' field as it's not part of
-                    # AccountOverview model
-                    account_fetched = {
-                        k: v for k, v in account_fetched.items() if k != "facilities"
-                    }
-                    account_data = [account_fetched]
-
-            if account_data:
-                account = account_data[0] if account_data else {}
-                points_needed = account.get("points_to_next_tier", 0)
-                next_tier = account.get("next_tier", "N/A")
-                final_response = (
-                    f"You need {points_needed} more points to reach "
-                    f"the next tier ({next_tier.title()})."
-                )
-            else:
-                final_response = (
-                    response_content
-                    if response_content
-                    else (
-                        "I couldn't find account information to answer "
-                        "your question about loyalty tiers."
-                    )
-                )
-        else:
-            final_response = response_content
-
-        # For "other" card_key, don't include account_overview even if
-        # data was fetched
-        # Include facility_overview when card_key is "account_overview" or
-        # "facility_overview"
+        # Return structured response
         return AgentResponse(
             conversation_id=final_conversation_id,
-            final_response=final_response,
+            final_response=response_content,
             card_key=card_key,
-            account_overview=account_data if card_key == "account_overview" else [],
-            facility_overview=(
-                facility_data
-                if (card_key == "facility_overview" or card_key == "account_overview")
-                else None
-            ),
-            note_overview=notes_data if card_key == "notes_overview" else [],
+            account_overview=account_data,
+            facility_overview=facility_data if facility_data else None,
+            note_overview=notes_data,
             rewards_overview=None,
             order_overview=None,
         )
 
     except Exception as e:
         # Error fallback
+        error_response = (
+            f"I apologize, but I encountered an error processing your request: {str(e)}"
+        )
+
+        # Save the error response to conversation memory
+        ai_message = AIMessage(content=error_response)
+        conv_memory.add_message(final_conversation_id, ai_message)
+
         return AgentResponse(
             conversation_id=final_conversation_id,
-            final_response=(
-                f"I apologize, but I encountered an error processing "
-                f"your request: {str(e)}"
-            ),
+            final_response=error_response,
             card_key="other",
             account_overview=[],
             facility_overview=None,

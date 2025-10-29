@@ -98,5 +98,15 @@
       "created_at": "2025-10-29T11:10:05.236902",
       "updated_at": "2025-10-29T11:10:05.236902"
     }
+  ],
+  "kaushal.sethia.c@evolus.com": [
+    {
+      "id": "9660df2c-1aeb-4cab-a45c-bd5187afb442",
+      "user_id": "kaushal.sethia.c@evolus.com",
+      "title": "Team Meeting Minutes",
+      "content": "Discussed Q4 goals and roadmap. Action items: Complete feature X by next week, review budget allocation.",
+      "created_at": "2025-10-29T23:30:10.043002",
+      "updated_at": "2025-10-29T23:30:10.043002"
+    }
   ]
 }

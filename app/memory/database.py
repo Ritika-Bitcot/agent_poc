@@ -1,7 +1,6 @@
 """Database configuration and models for conversation memory."""
 
 from datetime import datetime
-from typing import Optional
 
 from pydantic_settings import BaseSettings
 from sqlalchemy import Boolean, Column, DateTime, Integer, String, Text, create_engine
@@ -13,12 +12,11 @@ from sqlalchemy.pool import StaticPool
 class DatabaseSettings(BaseSettings):
     """Database configuration settings."""
 
-    database_url: Optional[str] = None
-    db_host: str = "localhost"
-    db_port: int = 5432
-    db_name: str = "agent_poc_db"
-    db_user: str = "username"
-    db_password: str = "password"
+    db_host: str
+    db_port: int
+    db_name: str
+    db_user: str
+    db_password: str
 
     class Config:
         env_file = ".env"
@@ -27,9 +25,6 @@ class DatabaseSettings(BaseSettings):
     @property
     def get_database_url(self) -> str:
         """Get the complete database URL."""
-        if self.database_url:
-            return self.database_url
-
         return (
             f"postgresql://{self.db_user}:{self.db_password}@"
             f"{self.db_host}:{self.db_port}/{self.db_name}"
