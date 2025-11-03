@@ -4,11 +4,18 @@ import json
 from typing import Any, Optional
 
 from langchain.agents import create_agent
-from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langchain_openai import ChatOpenAI
+from pydantic import ValidationError
 
 from app.memory import get_conversation_memory
-from app.models.response_models import AgentResponse
+from app.models.response_models import (
+    AccountOverview,
+    AgentResponse,
+    FacilityOverview,
+    NoteOverview,
+)
+from app.prompts import get_agent_prompt
 from app.tools import (
     fetch_account_details,
     fetch_facility_details,
@@ -69,199 +76,6 @@ def _determine_card_key(
     return "other"
 
 
-def _generate_response_from_data(
-    query: str, account_data: list, facility_data: list, notes_data: list
-) -> str:
-    """
-    Generate a natural language response based on the fetched data.
-
-    Args:
-        query: The user's original query
-        account_data: Account data that was fetched
-        facility_data: Facility data that was fetched
-        notes_data: Notes data that was fetched
-
-    Returns:
-        Natural language response
-    """
-    query_lower = query.lower()
-
-    # Account overview response
-    if account_data and any(
-        keyword in query_lower
-        for keyword in ["account", "overview", "summary", "show account"]
-    ):
-        account = account_data[0]
-
-        # Format address
-        address_parts = [
-            account.get("address_line1", ""),
-            account.get("address_city", ""),
-            account.get("address_state", ""),
-        ]
-        address = ", ".join(filter(None, address_parts))
-        if account.get("address_postal_code"):
-            address += f" {account.get('address_postal_code')}"
-
-        # Prepare values for long lines
-        current_tier = account.get("current_tier", "N/A")
-        next_tier_val = account.get("next_tier", "N/A")
-        points_needed_val = account.get("points_to_next_tier", 0)
-        current_balance = account.get("current_balance", 0)
-        pending_balance = account.get("pending_balance", 0)
-        rewards_redeemed = account.get("rewards_redeemed_towards_next_free_vial", 0)
-        rewards_required = account.get("rewards_required_for_next_free_vial", 0)
-
-        response = f"""Here is a summary of your account:
-
-- Account Name: {account.get('name', 'N/A')}
-- Status: {account.get('status', 'N/A')}
-- Account ID: {account.get('account_id', 'N/A')}
-- Address: {address}
-- Pricing Model: {account.get('pricing_model', 'N/A')}
-
-Loyalty & Rewards:
-- Current Loyalty Tier: {current_tier} (next tier: {next_tier_val}, {points_needed_val} points needed)  # noqa: E501
-- Loyalty Points Balance: {current_balance} (pending: {pending_balance})
-- Free Vials Available: {account.get('free_vials_available', 0)}
-- Rewards Redeemed Toward Next Free Vial: {rewards_redeemed} ({rewards_required} needed for next free vial)  # noqa: E501
-
-Other Details:
-- Evolux Level: {account.get('evolux_level', 'N/A')}
-- Reward Program Opt-in Status: {account.get('rewards_status', 'N/A')}
-
-Let me know if you need more detailed information or have other questions!"""
-
-        # Add facility information if available
-        if facility_data:
-            response += f"\n\nFacilities ({len(facility_data)} total):\n"
-            for i, facility in enumerate(facility_data, 1):
-                name = facility.get("name", "N/A")
-                fac_id = facility.get("id", "N/A")
-                status = facility.get("status", "N/A")
-                response += f"{i}. {name} ({fac_id}) - Status: {status}\n"
-
-        return response
-
-    # Facility overview response
-    elif facility_data and any(
-        keyword in query_lower for keyword in ["facility", "facilities"]
-    ):
-        if len(facility_data) == 1:
-            facility = facility_data[0]
-            # Prepare values for long lines
-            account_name = facility.get("account_name", "N/A")
-            account_id_val = facility.get("account_id", "N/A")
-            shipping_line1 = facility.get("shipping_address_line1", "N/A")
-            shipping_city = facility.get("shipping_address_city", "N/A")
-            shipping_state = facility.get("shipping_address_state", "N/A")
-            shipping_zip = facility.get("shipping_address_zip", "N/A")
-            license_num = facility.get("medical_license_number", "N/A")
-            license_status = facility.get("medical_license_status", "N/A")
-            owner_first = facility.get("medical_license_owner_first_name", "N/A")
-            owner_last = facility.get("medical_license_owner_last_name", "N/A")
-            agreement_status = facility.get("agreement_status", "N/A")
-            agreement_type = facility.get("agreement_type", "N/A")
-
-            return f"""Here is a summary of your facility:
-
-- Facility Name: {facility.get('name', 'N/A')}
-- Status: {facility.get('status', 'N/A')}
-- Facility ID: {facility.get('id', 'N/A')}
-- Account: {account_name} ({account_id_val})
-- Shipping Address: {shipping_line1}, {shipping_city}, {shipping_state} {shipping_zip}
-- Medical License: {license_num} ({license_status})
-- License Owner: {owner_first} {owner_last}
-- Agreement Status: {agreement_status} ({agreement_type})
-
-Let me know if you need more detailed information or have other questions!"""
-        else:
-            response = f"Here are all your facilities ({len(facility_data)} total):\n\n"
-            for i, facility in enumerate(facility_data, 1):
-                name = facility.get("name", "N/A")
-                fac_id = facility.get("id", "N/A")
-                status = facility.get("status", "N/A")
-                response += f"{i}. {name} ({fac_id}) - Status: {status}\n"
-            response += (
-                "\nLet me know if you need more detailed information "
-                "about any specific facility!"
-            )
-            return response
-
-    # Notes overview response
-    elif notes_data and any(
-        keyword in query_lower for keyword in ["notes", "note", "meeting"]
-    ):
-        if not notes_data:
-            return "You don't have any notes saved yet."
-        else:
-            response = f"Here are your notes ({len(notes_data)} total):\n\n"
-            for i, note in enumerate(notes_data, 1):
-                created_at = note.get("created_at", "")
-                date_str = created_at.split("T")[0] if "T" in created_at else created_at
-                time_str = (
-                    created_at.split("T")[1].split(".")[0] if "T" in created_at else ""
-                )
-
-                response += f"{i}. {note.get('title', 'Untitled')} (Created: {date_str}"
-                if time_str:
-                    response += f" at {time_str}"
-                response += ")\n"
-                response += f"   Content: {note.get('content', '')[:100]}"
-                if len(note.get("content", "")) > 100:
-                    response += "..."
-                response += "\n\n"
-            response += "Let me know if you need more details about any specific note!"
-            return response
-
-    # Specific account questions
-    elif account_data and any(
-        keyword in query_lower for keyword in ["points", "tier", "loyalty", "rewards"]
-    ):
-        account = account_data[0]
-        if "points" in query_lower and "tier" in query_lower:
-            points_needed = account.get("points_to_next_tier", 0)
-            next_tier = account.get("next_tier", "N/A")
-            return (
-                f"You need {points_needed} more points to reach "
-                f"the next tier ({next_tier.title()})."
-            )
-        elif "how many" in query_lower and (
-            "tier" in query_lower or "points" in query_lower
-        ):
-            points_needed = account.get("points_to_next_tier", 0)
-            next_tier = account.get("next_tier", "N/A")
-            return (
-                f"You need {points_needed} more points to reach "
-                f"the next tier ({next_tier.title()})."
-            )
-        elif "balance" in query_lower:
-            current_balance = account.get("current_balance", 0)
-            pending_balance = account.get("pending_balance", 0)
-            return (
-                f"Your current loyalty points balance is {current_balance} "
-                f"(with {pending_balance} pending)."
-            )
-        else:
-            return (
-                "Based on your account information, I can help you with specific "
-                "questions about your loyalty status, rewards, or account details."
-            )
-
-    # Default response
-    else:
-        if account_data or facility_data or notes_data:
-            return (
-                "I've gathered the available information. How can I help you with "
-                "your account, facilities, or notes?"
-            )
-        else:
-            return (
-                "I apologize, but I couldn't process your request. Please try "
-                "asking about your account, facilities, or notes."
-            )
-
-
 def create_agent_instance(openai_api_key: str, model_name: str = "gpt-4o-mini") -> Any:
     """
     Create the agent using LangChain's create_agent API with structured output.
@@ -282,8 +96,6 @@ def create_agent_instance(openai_api_key: str, model_name: str = "gpt-4o-mini") 
     tools = [fetch_account_details, fetch_facility_details, save_notes, fetch_notes]
 
     # Get the prompt template
-    from app.prompts import get_agent_prompt
-
     prompt = get_agent_prompt()
 
     # Create agent using the latest create_agent API
@@ -310,6 +122,227 @@ def get_agent(openai_api_key: str) -> Any:
     return _agent
 
 
+def _prepare_message_with_context(
+    text: str, account_id: str, user_id: str, facility_id: Optional[str] = None
+) -> str:
+    """
+    Prepare message content with context for the agent.
+
+    Args:
+        text: User's query
+        account_id: Account ID
+        user_id: User ID
+        facility_id: Optional facility ID
+
+    Returns:
+        Formatted message content
+    """
+    facility_context = (
+        f"- Facility ID: {facility_id} "
+        f"(use this facility_id when calling fetch_facility_details tool)"
+        if facility_id
+        else ""
+    )
+
+    return f"""User Query: {text}
+
+Context:
+- Account ID: {account_id} (use this account_id when calling
+  fetch_account_details tool)
+- User ID: {user_id} (use this user_id when calling fetch_notes tool)
+{facility_context}
+
+Please help the user with their request. Use the available tools with the IDs
+provided above to fetch the necessary data."""
+
+
+def _extract_tool_data(messages: list) -> tuple[list, list, list, set]:
+    """
+    Extract account, facility, and notes data from tool messages.
+
+    Args:
+        messages: List of messages from agent result
+
+    Returns:
+        Tuple of (account_data, facility_data, notes_data, tools_called)
+    """
+    account_data = []
+    facility_data = []
+    notes_data = []
+    tools_called = set()
+
+    for msg in messages:
+        if isinstance(msg, ToolMessage):
+            tools_called.add(msg.name if hasattr(msg, "name") else "unknown")
+
+            if hasattr(msg, "content") and msg.content:
+                content = msg.content
+                tool_result = None
+
+                if isinstance(content, dict):
+                    tool_result = content
+                elif isinstance(content, str):
+                    try:
+                        tool_result = json.loads(content)
+                    except json.JSONDecodeError:
+                        tool_result = None
+
+                if isinstance(tool_result, dict):
+                    if "account_overview" in tool_result:
+                        account_data = tool_result.get("account_overview", [])
+                    if "facility_overview" in tool_result:
+                        facility_data = tool_result.get("facility_overview", [])
+                    if "note_overview" in tool_result:
+                        notes_data = tool_result.get("note_overview", [])
+        elif hasattr(msg, "tool_calls") and msg.tool_calls:
+            for tool_call in msg.tool_calls:
+                if hasattr(tool_call, "name"):
+                    tools_called.add(tool_call.name)
+        elif hasattr(msg, "name") and msg.name:
+            tools_called.add(msg.name)
+
+    return account_data, facility_data, notes_data, tools_called
+
+
+def _extract_agent_response(messages: list) -> tuple[str, bool]:
+    """
+    Extract the agent's actual response from messages.
+
+    Args:
+        messages: List of messages from agent result
+
+    Returns:
+        Tuple of (response_content, agent_responded)
+    """
+    response_content = ""
+    agent_responded = False
+
+    for msg in reversed(messages):
+        if isinstance(msg, ToolMessage):
+            continue
+
+        if isinstance(msg, AIMessage) and hasattr(msg, "content") and msg.content:
+            content_stripped = msg.content.strip()
+
+            # Skip if content is too short or contains context/prompt markers
+            skip_phrases = [
+                "User Query:",
+                "Context:",
+                "Please help",
+                "I'll help",
+            ]
+
+            if len(content_stripped) > 10 and not any(
+                skip in content_stripped for skip in skip_phrases
+            ):
+                response_content = content_stripped
+                agent_responded = True
+                break
+
+    return response_content, agent_responded
+
+
+def _generate_fallback_response(
+    account_data: list, facility_data: list, notes_data: list
+) -> str:
+    """
+    Generate fallback response when agent doesn't respond properly.
+
+    Args:
+        account_data: Account data fetched
+        facility_data: Facility data fetched
+        notes_data: Notes data fetched
+
+    Returns:
+        Fallback response message
+    """
+    if account_data or facility_data or notes_data:
+        return (
+            "I apologize, but I couldn't generate a proper response. "
+            "Please try rephrasing your question or ask about your account, "
+            "facilities, or notes."
+        )
+    return (
+        "I apologize, but I couldn't process your request. "
+        "Please try asking about your account, facilities, or notes."
+    )
+
+
+def _convert_to_pydantic_models(
+    account_data: list, facility_data: list, notes_data: list
+) -> tuple[list, Optional[list], list]:
+    """
+    Convert raw data dictionaries to Pydantic models.
+
+    Args:
+        account_data: List of account dictionaries
+        facility_data: List of facility dictionaries
+        notes_data: List of note dictionaries
+
+    Returns:
+        Tuple of (account_models, facility_models, note_models)
+    """
+    account_models = []
+    for account in account_data:
+        try:
+            account_models.append(AccountOverview(**account))
+        except ValidationError:
+            continue
+
+    facility_models = None
+    if facility_data:
+        facility_models = []
+        for facility in facility_data:
+            try:
+                facility_models.append(FacilityOverview(**facility))
+            except ValidationError:
+                continue
+        facility_models = facility_models if facility_models else None
+
+    note_models = []
+    for note in notes_data:
+        try:
+            note_models.append(NoteOverview(**note))
+        except ValidationError:
+            continue
+
+    return account_models, facility_models, note_models
+
+
+def _build_agent_response(
+    conversation_id: str,
+    response_content: str,
+    card_key: str,
+    account_models: list,
+    facility_models: Optional[list],
+    note_models: list,
+) -> AgentResponse:
+    """
+    Build the final AgentResponse using Pydantic model.
+
+    Args:
+        conversation_id: Conversation identifier
+        response_content: Agent's response text
+        card_key: UI card type
+        account_models: List of AccountOverview models
+        facility_models: Optional list of FacilityOverview models
+        note_models: List of NoteOverview models
+
+    Returns:
+        Validated AgentResponse instance
+    """
+    return AgentResponse(
+        conversation_id=conversation_id,
+        final_response=response_content,
+        card_key=card_key,
+        account_overview=account_models,
+        facility_overview=facility_models,
+        note_overview=note_models,
+        rewards_overview=None,
+        order_overview=None,
+    )
+
+
 def process_agent_request(
     agent: Any,
     text: str,
@@ -320,6 +353,10 @@ def process_agent_request(
 ) -> AgentResponse:
     """
     Process a request through the agent and return structured response.
+
+    This is the main orchestrator function that coordinates the agent
+    processing workflow. It delegates specific responsibilities to focused
+    helper functions.
 
     Args:
         agent: The agent instance
@@ -332,135 +369,110 @@ def process_agent_request(
     Returns:
         Structured agent response
     """
-    # Get or create conversation ID
-    conv_memory = get_conversation_memory()
-    final_conversation_id = conv_memory.get_or_create_conversation_id(
-        user_id, conversation_id
-    )
-
-    # Create message with context
-    message_content = f"""User Query: {text}
-
-Context:
-- Account ID: {account_id} (use this account_id when calling fetch_account_details tool)
-- User ID: {user_id} (use this user_id when calling fetch_notes tool)
-{f'- Facility ID: {facility_id} (use this facility_id when calling fetch_facility_details tool)' if facility_id else ''}  # noqa: E501
-
-Please help the user with their request. Use the available tools with the IDs provided above to fetch the necessary data."""
-
-    # Prepare input for the agent
-    human_message = HumanMessage(content=message_content)
-    agent_input = {"messages": [human_message]}
-
-    # Save the human message to conversation memory
-    conv_memory.add_message(final_conversation_id, human_message)
-
-    # Run the agent with conversation memory
+    # Invoke agent with conversation memory
+    # Wrap all operations in try-except to ensure consistent error handling
     try:
+        # Manage conversation context
+        conv_memory = get_conversation_memory()
+        final_conversation_id = conv_memory.get_or_create_conversation_id(
+            user_id, conversation_id
+        )
+
+        # Prepare message with context
+        message_content = _prepare_message_with_context(
+            text, account_id, user_id, facility_id
+        )
+        human_message = HumanMessage(content=message_content)
+        agent_input = {"messages": [human_message]}
+
+        # Save human message to conversation memory
+        conv_memory.add_message(final_conversation_id, human_message)
+
+        # Invoke agent with conversation memory
         result = agent.invoke(
             agent_input, config={"configurable": {"thread_id": final_conversation_id}}
         )
 
-        # Extract data from the result
-        account_data = []
-        facility_data = []
-        notes_data = []
-        response_content = ""
-        tools_called = set()
-
+        # Process agent result
         if isinstance(result, dict) and "messages" in result:
             messages = result["messages"]
 
-            # Extract tool results and track which tools were called
-            for msg in messages:
-                # Track tool calls
-                if hasattr(msg, "name") and msg.name:
-                    tools_called.add(msg.name)
+            # Extract tool data
+            account_data, facility_data, notes_data, tools_called = _extract_tool_data(
+                messages
+            )
 
-                if hasattr(msg, "content") and isinstance(msg.content, str):
-                    try:
-                        # Try to parse as JSON to extract structured data
-                        tool_result = json.loads(msg.content)
-                        if isinstance(tool_result, dict):
-                            if "account_overview" in tool_result:
-                                account_data = tool_result.get("account_overview", [])
-                            if "facility_overview" in tool_result:
-                                facility_data = tool_result.get("facility_overview", [])
-                            if "note_overview" in tool_result:
-                                notes_data = tool_result.get("note_overview", [])
-                    except json.JSONDecodeError:
-                        # If not JSON, check if it's a natural language response
-                        if not response_content and len(msg.content) > 10:
-                            response_content = msg.content
+            # Extract agent response
+            response_content, agent_responded = _extract_agent_response(messages)
 
-            # Get the last AI message (the final response) - skip context messages
-            for msg in reversed(messages):
-                if (
-                    hasattr(msg, "content")
-                    and msg.content
-                    and not response_content
-                    and not msg.content.startswith("User Query:")
-                    and not msg.content.startswith("Context:")
-                    and not msg.content.startswith("Please help the user")
-                    and len(msg.content) > 20
-                ):
-                    response_content = msg.content
-                    break
-
-            # If no proper response found or response is just context,
-            # generate one based on the data
-            if (
-                not response_content
-                or response_content.startswith("User Query:")
-                or response_content.startswith("Context:")
-                or response_content.startswith("Please help the user")
-            ):
-                response_content = _generate_response_from_data(
-                    text, account_data, facility_data, notes_data
+            # Handle fallback if agent didn't respond
+            if not agent_responded:
+                response_content = _generate_fallback_response(
+                    account_data, facility_data, notes_data
                 )
 
         else:
             response_content = str(result)
+            account_data = []
+            facility_data = []
+            notes_data = []
+            tools_called = set()
 
-        # Intelligently determine card_key based on which tools were called
-        # and what data was fetched
+        # Determine card key for UI
         card_key = _determine_card_key(
             text, tools_called, account_data, facility_data, notes_data
         )
 
-        # Save the AI response to conversation memory
+        # Convert to Pydantic models
+        account_models, facility_models, note_models = _convert_to_pydantic_models(
+            account_data, facility_data, notes_data
+        )
+
+        # Save AI response to conversation memory
         ai_message = AIMessage(content=response_content)
         conv_memory.add_message(final_conversation_id, ai_message)
 
-        # Return structured response
-        return AgentResponse(
-            conversation_id=final_conversation_id,
-            final_response=response_content,
-            card_key=card_key,
-            account_overview=account_data,
-            facility_overview=facility_data if facility_data else None,
-            note_overview=notes_data,
-            rewards_overview=None,
-            order_overview=None,
+        # Build and return response
+        return _build_agent_response(
+            final_conversation_id,
+            response_content,
+            card_key,
+            account_models,
+            facility_models,
+            note_models,
         )
 
     except Exception as e:
-        # Error fallback
+        # Error handling - return consistent error response
+        # Handle case where conversation_id might not be set if error occurred early
         error_response = (
             f"I apologize, but I encountered an error processing your request: {str(e)}"
         )
 
-        # Save the error response to conversation memory
-        ai_message = AIMessage(content=error_response)
-        conv_memory.add_message(final_conversation_id, ai_message)
+        # Try to save error to conversation memory if available
+        try:
+            conv_memory = get_conversation_memory()
+            # Try to get conversation_id - may fail if setup didn't complete
+            try:
+                final_conversation_id = conv_memory.get_or_create_conversation_id(
+                    user_id, conversation_id
+                )
+                ai_message = AIMessage(content=error_response)
+                conv_memory.add_message(final_conversation_id, ai_message)
+                error_conversation_id = final_conversation_id
+            except Exception:
+                # If conversation setup fails, use provided conversation_id
+                # or generate fallback
+                error_conversation_id = conversation_id or "error"
+        except Exception:
+            # If memory system is unavailable, use fallback
+            error_conversation_id = conversation_id or "error"
 
-        return AgentResponse(
-            conversation_id=final_conversation_id,
-            final_response=error_response,
-            card_key="other",
-            account_overview=[],
-            facility_overview=None,
-            note_overview=[],
-            rewards_overview=None,
-            order_overview=None,
+        return _build_agent_response(
+            error_conversation_id,
+            error_response,
+            "other",
+            [],
+            None,
+            [],
         )
