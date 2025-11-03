@@ -4,12 +4,13 @@ A single-agent architecture built with LangGraph and FastAPI that supports multi
 
 ## Features
 
-- **Single Agent Architecture**: Uses LangGraph's `create_react_agent` for agent creation
-- **Multi-turn Conversations**: Maintains conversation history and context
-- **Structured Output**: Returns both JSON and natural language responses
+- **Single Agent Architecture**: Uses LangChain's `create_agent` for agent creation
+- **Multi-turn Conversations**: Maintains conversation history and context using PostgreSQL
+- **Structured Output**: Returns structured responses with Pydantic models
 - **Modular Design**: Clean separation of concerns across different modules
 - **FastAPI Integration**: RESTful API with automatic documentation
-- **Memory Management**: Conversation memory with cleanup capabilities
+- **Memory Management**: PostgreSQL-based conversation memory
+- **Error Handling**: Centralized error handling with consistent response format
 
 ## Project Structure
 
@@ -79,14 +80,9 @@ The agent returns structured responses with:
    # Edit .env with your OpenAI API key and database credentials
    ```
 
-4. **Initialize Database Tables**:
+4. **Run the Application**:
    ```bash
-   python init_database.py
-   ```
-
-5. **Run the Application**:
-   ```bash
-   python start_server.py
+   python main.py
    ```
 
    Or with uvicorn directly:
@@ -97,13 +93,7 @@ The agent returns structured responses with:
 ## API Endpoints
 
 - `GET /` - Root endpoint
-- `GET /health` - Health check
-- `POST /chat` - Chat with the agent
-- `POST /postman` - Alternative endpoint (same format as /chat)
-- `GET /conversations/{conversation_id}` - Get conversation info
-- `DELETE /conversations/{conversation_id}` - Delete conversation
-- `GET /conversations` - List all conversations
-- `POST /cleanup` - Clean up old conversations
+- `POST /chat` - Chat with the agent (main endpoint)
 
 ## Data Structure
 
@@ -119,7 +109,7 @@ All tools now read from and write to these JSON files instead of using hardcoded
 
 ### API Request Format
 
-Both `/chat` and `/postman` endpoints use the same request format:
+The `/chat` endpoint accepts the following request format:
 
 **Account Overview Request:**
 ```json
@@ -208,13 +198,14 @@ If `DATABASE_URL` is provided, it will be used instead of the individual databas
 
 ## Development
 
-The codebase follows a modular architecture:
+The codebase follows a modular architecture with SOLID principles:
 
 - **Tools**: Implemented as LangChain tools with proper schemas
-- **Prompts**: Structured prompts with JSON schema enforcement
-- **Memory**: Conversation memory with cleanup capabilities
-- **Models**: Pydantic models for request/response validation
-- **API**: FastAPI with proper error handling and documentation
+- **Prompts**: Comprehensive prompts with detailed instructions and examples
+- **Memory**: PostgreSQL-based conversation memory with automatic cleanup
+- **Models**: Pydantic models for request/response validation and type safety
+- **API**: FastAPI with centralized error handling and consistent responses
+- **Agent Factory**: Refactored with helper functions following single responsibility principle
 
 ## Notes
 
