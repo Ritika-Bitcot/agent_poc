@@ -2,12 +2,13 @@
 
 from typing import Optional
 
-from fastapi import Depends, FastAPI, HTTPException
+import uvicorn
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic_settings import BaseSettings
 
 from app.agent import get_agent, process_agent_request
-from app.memory import create_tables, get_conversation_memory
+from app.memory import create_tables
 from app.models import AgentRequest, AgentResponse
 
 
@@ -83,12 +84,6 @@ async def root():
     }
 
 
-@app.get("/health")
-async def health_check():
-    """Health check endpoint."""
-    return {"status": "healthy", "service": "agent-poc-api"}
-
-
 @app.post("/chat", response_model=AgentResponse)
 async def chat_with_agent(
     request: AgentRequest, agent=Depends(get_agent_dependency)
@@ -98,134 +93,20 @@ async def chat_with_agent(
 
     This endpoint processes user messages and returns structured responses
     with conversation memory support.
+
+    Note: All errors are handled by process_agent_request() and returned
+    as AgentResponse instances for consistency.
     """
-    try:
-        # Process the request through the agent
-        response = process_agent_request(
-            agent=agent,
-            text=request.text,
-            user_id=request.user_id,
-            account_id=request.account_id,
-            facility_id=request.facility_id,
-            conversation_id=request.conversation_id,
-        )
-
-        return response
-
-    except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"Error processing request: {str(e)}"
-        )
-
-
-@app.get("/conversations/{conversation_id}")
-async def get_conversation_info(conversation_id: str):
-    """Get information about a specific conversation."""
-    try:
-        conv_memory = get_conversation_memory()
-        stats = conv_memory.get_conversation_stats()
-
-        return {
-            "conversation_id": conversation_id,
-            "stats": stats,
-            "message": "Conversation information retrieved successfully",
-        }
-    except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"Error retrieving conversation info: {str(e)}"
-        )
-
-
-@app.delete("/conversations/{conversation_id}")
-async def delete_conversation(conversation_id: str):
-    """Delete a specific conversation."""
-    try:
-        conv_memory = get_conversation_memory()
-        if conversation_id in conv_memory.conversation_metadata:
-            del conv_memory.conversation_metadata[conversation_id]
-            return {"message": f"Conversation {conversation_id} deleted successfully"}
-        else:
-            raise HTTPException(status_code=404, detail="Conversation not found")
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"Error deleting conversation: {str(e)}"
-        )
-
-
-@app.get("/conversations")
-async def list_conversations():
-    """List all conversations."""
-    try:
-        conv_memory = get_conversation_memory()
-        stats = conv_memory.get_conversation_stats()
-
-        return {
-            "conversations": list(conv_memory.conversation_metadata.keys()),
-            "stats": stats,
-        }
-    except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"Error listing conversations: {str(e)}"
-        )
-
-
-@app.post("/cleanup")
-async def cleanup_old_conversations():
-    """Clean up old conversations."""
-    try:
-        conv_memory = get_conversation_memory()
-        cleaned_count = conv_memory.cleanup_old_conversations()
-
-        return {
-            "message": f"Cleaned up {cleaned_count} old conversations",
-            "cleaned_count": cleaned_count,
-        }
-    except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"Error cleaning up conversations: {str(e)}"
-        )
-
-
-@app.post("/postman", response_model=AgentResponse)
-async def postman_chat(
-    request: AgentRequest, agent=Depends(get_agent_dependency)
-) -> AgentResponse:
-    """
-    Simplified chat endpoint that accepts the same format as /chat.
-
-    This endpoint works with the same AgentRequest model, making it simpler
-    to use with Postman or any other client.
-    """
-    try:
-        # Process the request directly through the agent
-        response = process_agent_request(
-            agent=agent,
-            text=request.text,
-            user_id=request.user_id,
-            account_id=request.account_id,
-            facility_id=request.facility_id,
-            conversation_id=request.conversation_id,
-        )
-
-        return response
-
-    except Exception as e:
-        # Return error response in the same format
-        return AgentResponse(
-            conversation_id=request.conversation_id or "error",
-            final_response=f"Error processing request: {str(e)}",
-            card_key="other",
-            account_overview=[],
-            facility_overview=None,
-            note_overview=[],
-            rewards_overview=None,
-            order_overview=None,
-        )
+    # process_agent_request() handles all errors and returns AgentResponse
+    return process_agent_request(
+        agent=agent,
+        text=request.text,
+        user_id=request.user_id,
+        account_id=request.account_id,
+        facility_id=request.facility_id,
+        conversation_id=request.conversation_id,
+    )
 
 
 if __name__ == "__main__":
-    import uvicorn
-
     uvicorn.run("app.api.main:app", host="0.0.0.0", port=8000, reload=settings.debug)
